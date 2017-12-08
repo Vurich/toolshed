@@ -18,6 +18,20 @@ pub struct Arena {
 }
 
 impl Arena {
+    pub fn bytes(&self) -> usize {
+        let v = self.store.replace(vec![]);
+        let count = v.iter().map(|v| v.capacity()).sum();
+        self.store.replace(v);
+        count
+    }
+
+    pub fn pages(&self) -> usize {
+        let v = self.store.replace(vec![]);
+        let count = v.len();
+        self.store.replace(v);
+        count
+    }
+
     /// Create a new arena with a single preallocated 64KiB page
     pub fn new() -> Self {
         let mut store = vec![Vec::with_capacity(ARENA_BLOCK)];
@@ -90,6 +104,46 @@ impl Arena {
     #[inline]
     pub unsafe fn alloc_uninitialized<'a, T: Sized + Copy>(&'a self) -> &'a mut T {
         &mut *(self.require(size_of::<T>()) as *mut T)
+    }
+
+    /// Allocate an `&str` slice onto the arena and return a reference to it. This is
+    /// useful when the original slice has an undefined lifetime.
+    ///
+    /// Note: static slices (`&'static str`) can be safely used in place of arena-bound
+    ///       slices without having to go through this method.
+    pub fn alloc_byte_slice_mut<'a>(&'a self, val: &[u8]) -> &'a mut [u8] {
+        use std::slice;
+        use std::ptr;
+
+        let offset = self.offset.get();
+        let alignment = size_of::<usize>() - (val.len() % size_of::<usize>());
+        let cap = offset + val.len() + alignment;
+
+        if cap > ARENA_BLOCK {
+            return self.alloc_byte_vec_mut(val.into());
+        }
+
+        self.offset.set(cap);
+
+        unsafe {
+            let ptr = self.ptr.get().offset(offset as isize);
+            ptr::copy_nonoverlapping(val.as_ptr(), ptr, val.len());
+
+            slice::from_raw_parts_mut(ptr, val.len())
+        }
+    }
+
+    /// Pushes the `Vec` as it's own page onto the arena and returns a mutable reference to it.
+    /// This does not copy or reallocate the original `Vec`.
+    pub fn alloc_byte_vec_mut<'a>(&'a self, val: Vec<u8>) -> &'a mut [u8] {
+        use std::slice;
+
+        let len = val.len();
+        let ptr = self.alloc_vec(val);
+
+        unsafe {
+            slice::from_raw_parts_mut(ptr, len)
+        }
     }
 
     /// Allocate an `&str` slice onto the arena and return a reference to it. This is
