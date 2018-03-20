@@ -221,7 +221,7 @@ impl Arena {
     }
 
     #[inline]
-    fn require(&self, size: usize) -> *mut u8 {
+    pub fn require(&self, size: usize) -> *mut u8 {
         // This should be optimized away for size known at compile time.
         if size > ARENA_BLOCK {
             return self.alloc_bytes(size);
