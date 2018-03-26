@@ -46,13 +46,14 @@ impl Arena {
 
     /// Allocate many items at once, without reallocating
     #[inline]
-    pub fn alloc_many<'input, 'output, T: Sized + Copy + 'input, V: Into<Cow<'input, [T]>>>(
+    pub fn alloc_many<'input, 'output, T: Sized + 'input>(
         &'output self,
-        vals: V,
-    ) -> &'output [T] {
+        vals: Cow<'input, [T]>,
+    ) -> &'output [T]
+    where
+        [T]: ToOwned<Owned = Vec<T>>,
+    {
         use std::{mem, ptr, slice};
-
-        let vals = vals.into();
 
         if vals.as_ref().is_empty() {
             return &[];
@@ -90,7 +91,7 @@ impl Arena {
 
     /// Put the value onto the page of the arena and return a reference to it.
     #[inline]
-    pub fn alloc<'a, T: Sized + Copy>(&'a self, val: T) -> &'a T {
+    pub fn alloc<'a, T: Sized>(&'a self, val: T) -> &'a T {
         unsafe {
             let ptr = self.alloc_uninitialized();
             *ptr = val;
@@ -102,7 +103,7 @@ impl Arena {
     /// Memory behind the pointer is uninitialized, can contain garbage and reading
     /// from it is undefined behavior.
     #[inline]
-    pub unsafe fn alloc_uninitialized<'a, T: Sized + Copy>(&'a self) -> &'a mut T {
+    pub unsafe fn alloc_uninitialized<'a, T: Sized>(&'a self) -> &'a mut T {
         &mut *(self.require(size_of::<T>()) as *mut T)
     }
 
@@ -141,9 +142,7 @@ impl Arena {
         let len = val.len();
         let ptr = self.alloc_vec(val);
 
-        unsafe {
-            slice::from_raw_parts_mut(ptr, len)
-        }
+        unsafe { slice::from_raw_parts_mut(ptr, len) }
     }
 
     /// Allocate an `&str` slice onto the arena and return a reference to it. This is
